@@ -26,7 +26,7 @@ jobs:
       - run: pip install ollama pillow
 
       - name: Run Vision Analysis & Story Script
-        run: python generate_story.py
+        run: python -u generate_story.py
 
       - name: Commit and Save Prompt Data
         run: |
