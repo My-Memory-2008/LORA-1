@@ -15,18 +15,43 @@ def convert_image_to_base64(img_path):
         img.convert("RGB").save(buffered, format="JPEG")
         return base64.b64encode(buffered.getvalue()).decode('utf-8')
 
+# Ensure the folder exists to avoid unexpected crash points
+if not os.path.exists(SAMPLES_DIR):
+    os.makedirs(SAMPLES_DIR)
+
 # Read current pipeline memory configuration
 past_stories = []
 if os.path.exists(HISTORY_FILE):
     with open(HISTORY_FILE, "r") as f:
-        try: past_stories = json.load(f)
-        except json.JSONDecodeError: pass
+        try: 
+            past_stories = json.load(f)
+        except json.JSONDecodeError: 
+            pass
 
 next_chapter_num = len(past_stories) + 1
-image_paths = [os.path.join(SAMPLES_DIR, f) for f in os.listdir(SAMPLES_DIR) if f.lower().endswith('.png')]
+
+# Automatically scan and identify ANY valid image type regardless of format or casing
+image_paths = []
+if os.path.exists(SAMPLES_DIR):
+    for filename in os.listdir(SAMPLES_DIR):
+        full_path = os.path.join(SAMPLES_DIR, filename)
+        # Skip directories
+        if os.path.isdir(full_path):
+            continue
+        try:
+            # Attempt to verify if PIL can recognize it as an image asset
+            with Image.open(full_path) as test_img:
+                test_img.verify()
+            image_paths.append(full_path)
+        except Exception:
+            # Ignore non-image system files like .DS_Store or hidden logs
+            pass
 
 if not image_paths:
-    raise FileNotFoundError(f"Ensure your character PNG images are placed inside the '{SAMPLES_DIR}' folder.")
+    raise FileNotFoundError(
+        f"Could not locate any valid image files inside the '{SAMPLES_DIR}' directory. "
+        f"Please verify files are uploaded. Detected directory contents: {os.listdir(SAMPLES_DIR)}"
+    )
 
 # Encode frames into structural vision inputs
 encoded_images = [convert_image_to_base64(p) for p in image_paths]
@@ -48,7 +73,7 @@ prompt_text = (
     f"}}"
 )
 
-print(f"🧠 Querying Ollama qwen2.5vl:3b with {len(image_paths)} character frames...")
+print(f"🧠 Querying Ollama qwen2.5vl:3b with {len(image_paths)} valid character asset frames...")
 response = generate(
     model='qwen2.5vl:3b',
     prompt=prompt_text,
