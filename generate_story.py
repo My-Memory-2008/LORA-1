@@ -9,10 +9,18 @@ HISTORY_FILE = "story_history.json"
 SAMPLES_DIR = "lora_samples"
 INSTRUCTIONS_FILE = "next_reel_instructions.json"
 
-def convert_image_to_base64(img_path):
+def convert_and_resize_image_to_base64(img_path, max_size=448):
+    """
+    Resizes images dynamically to fit safely within vision token constraints.
+    Large resolution images inflate the context window size exponentially.
+    """
     with Image.open(img_path) as img:
+        img = img.convert("RGB")
+        # Scale image down smoothly if it exceeds max size limit
+        img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+        
         buffered = BytesIO()
-        img.convert("RGB").save(buffered, format="JPEG")
+        img.save(buffered, format="JPEG", quality=85)
         return base64.b64encode(buffered.getvalue()).decode('utf-8')
 
 # Ensure the folder exists to avoid unexpected crash points
@@ -35,26 +43,22 @@ image_paths = []
 if os.path.exists(SAMPLES_DIR):
     for filename in os.listdir(SAMPLES_DIR):
         full_path = os.path.join(SAMPLES_DIR, filename)
-        # Skip directories
         if os.path.isdir(full_path):
             continue
         try:
-            # Attempt to verify if PIL can recognize it as an image asset
             with Image.open(full_path) as test_img:
                 test_img.verify()
             image_paths.append(full_path)
         except Exception:
-            # Ignore non-image system files like .DS_Store or hidden logs
             pass
 
 if not image_paths:
     raise FileNotFoundError(
         f"Could not locate any valid image files inside the '{SAMPLES_DIR}' directory. "
-        f"Please verify files are uploaded. Detected directory contents: {os.listdir(SAMPLES_DIR)}"
     )
 
-# Encode frames into structural vision inputs
-encoded_images = [convert_image_to_base64(p) for p in image_paths]
+# Encode frames into clean, token-efficient visual inputs
+encoded_images = [convert_and_resize_image_to_base64(p) for p in image_paths]
 
 prompt_text = (
     f"You are an anime series director. Analyze these attached reference images of a specific character. "
@@ -73,11 +77,16 @@ prompt_text = (
     f"}}"
 )
 
-print(f"🧠 Querying Ollama qwen2.5vl:3b with {len(image_paths)} valid character asset frames...")
+print(f"🧠 Querying Ollama qwen2.5vl:3b with {len(image_paths)} resized character asset frames...")
+
+# Expand options context window configuration rule to 16k tokens explicitly
 response = generate(
     model='qwen2.5vl:3b',
     prompt=prompt_text,
-    images=encoded_images
+    images=encoded_images,
+    options={
+        "num_ctx": 16384  # Increases standard context size threshold to prevent 400 errors
+    }
 )
 
 output_text = response['response'].strip().strip("```json").strip("```")
@@ -85,7 +94,6 @@ output_text = response['response'].strip().strip("```json").strip("```")
 try:
     story_payload = json.loads(output_text)
 except Exception:
-    # Error protection path to catch unformatted outputs
     story_payload = {
         "title": f"Anime Chapter Chronicles Vol {next_chapter_num}",
         "prompts": [line.strip() for line in output_text.split('\n') if len(line.strip()) > 10][:3]
