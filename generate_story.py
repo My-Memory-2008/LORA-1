@@ -119,6 +119,141 @@
 
 
 
+# import os
+# import json
+# import base64
+# from io import BytesIO
+# from PIL import Image
+# from ollama import generate
+
+# HISTORY_FILE = "story_history.json"
+# SAMPLES_DIR = "lora_samples"
+# INSTRUCTIONS_FILE = "next_reel_instructions.json"
+
+# def convert_and_resize_image_to_base64(img_path, max_size=512):
+#     with Image.open(img_path) as img:
+#         img = img.convert("RGB")
+#         img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+#         buffered = BytesIO()
+#         img.save(buffered, format="JPEG", quality=90)
+#         return base64.b64encode(buffered.getvalue()).decode('utf-8')
+
+# # Check files
+# if not os.path.exists(SAMPLES_DIR):
+#     os.makedirs(SAMPLES_DIR)
+
+# past_stories = []
+# if os.path.exists(HISTORY_FILE):
+#     with open(HISTORY_FILE, "r") as f:
+#         try: past_stories = json.load(f)
+#         except json.JSONDecodeError: pass
+
+# next_chapter_num = len(past_stories) + 1
+
+# # Grab the first available image file inside your lora_samples folder
+# image_paths = []
+# for filename in os.listdir(SAMPLES_DIR):
+#     full_path = os.path.join(SAMPLES_DIR, filename)
+#     if os.path.isdir(full_path):
+#         continue
+#     try:
+#         with Image.open(full_path) as test_img:
+#             test_img.verify()
+#         image_paths.append(full_path)
+#     except Exception:
+#         pass
+
+# if not image_paths:
+#     raise FileNotFoundError(f"Please place exactly one character image inside the '{SAMPLES_DIR}' folder.")
+
+# # Use only the absolute first image found for razor-sharp character analysis
+# target_character_image = image_paths[0]
+# encoded_image = convert_and_resize_image_to_base64(target_character_image)
+
+# # High-fidelity directional storytelling prompt designed for Stable Diffusion generation
+# prompt_text = f"""
+# You are an expert anime director and storyboard artist. Analyze the attached reference image of our main character.
+# Look at their gender, hair color, facial features, facial expression, and outfit style. They are ALWAYS the central figure.
+
+# Task:
+# Write a meaningful, 10-second anime reel sequence split into 4 core sequential scenes.
+# Because our pipeline renders at 8 frames per second (FPS), your job is to output exactly 80 prompts in total (20 continuous progressive sub-prompts for each of the 4 main scenes) so that the final video shows smooth, meaningful movement without sudden jumps.
+
+# Ensure the theme avoids anything mentioned in our history log: {past_stories}.
+
+# You MUST output your final answer strictly as a clean, raw JSON object with NO markdown, NO triple backticks (```), and NO additional conversational text. 
+
+# Follow this exact structural template:
+# {{
+#   "title": "Anime Chronicles Episode {next_chapter_num}",
+#   "prompts": [
+#     "Scene 1 Start (Frame 1): 1girl/1boy [describe character physical features from image], standing in an open meadow, wind blowing their hair, looking up at a cloudy sky, anime style, masterpiece",
+#     "Scene 1 Progress (Frame 2): 1girl/1boy [describe features], in a meadow, slowly turning their head towards the camera, gentle wind, shifting background clouds, anime style",
+#     "...(continue listing progressive movements frame-by-frame up to Frame 80)..."
+#   ]
+# }}
+# """
+
+# print(f"🧠 Analyzing main character image: {os.path.basename(target_character_image)}")
+# print(f"🎬 Composing an 80-frame (10 second at 8 FPS) progressive storyboard sequence via Qwen2.5-VL...")
+
+# response = generate(
+#     model='qwen2.5vl:3b',
+#     prompt=prompt_text,
+#     images=[encoded_image],
+#     options={
+#         "num_ctx": 16384,
+#         "temperature": 0.7
+#     }
+# )
+
+# output_text = response['response'].strip()
+
+# # Stripping common markdown wrappers just in case the model inserts them out of habit
+# if output_text.startswith("```"):
+#     output_text = output_text.split("\n", 1)[1]
+# if output_text.endswith("```"):
+#     output_text = output_text.rsplit("\n", 1)[0]
+# output_text = output_text.strip("```json").strip("```").strip()
+
+# try:
+#     story_payload = json.loads(output_text)
+#     # Ensure it parsed clean and contains valid list formatting
+#     if not isinstance(story_payload.get("prompts"), list):
+#         raise ValueError("Prompts element must be a valid array list structure.")
+# except Exception:
+#     print("⚠️ JSON layout formatting anomaly detected from AI. Triggering robust structural fallback extraction...")
+#     # Clean fallback layout generation so your script NEVER crashes out on the GitHub Actions side
+#     lines = [line.strip().replace('"', '').strip(',') for line in output_text.split('\n') if len(line.strip()) > 15]
+#     story_payload = {
+#         "title": f"Anime Saga Chapter Vol {next_chapter_num}",
+#         "prompts": lines[:80] if len(lines) >= 80 else lines + [f"Main character action continuation frame, anime style, masterpiece"] * (80 - len(lines))
+#     }
+
+# # Save memory history and the instruction blueprint file for Kaggle
+# past_stories.append(story_payload["title"])
+# with open(HISTORY_FILE, "w") as f:
+#     json.dump(past_stories, f, indent=4)
+
+# with open(INSTRUCTIONS_FILE, "w") as f:
+#     json.dump(story_payload, f, indent=4)
+
+# print(f"🎉 Success! 'next_reel_instructions.json' successfully saved with {len(story_payload['prompts'])} structural image rendering prompts.")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import os
 import json
 import base64
@@ -138,19 +273,22 @@ def convert_and_resize_image_to_base64(img_path, max_size=512):
         img.save(buffered, format="JPEG", quality=90)
         return base64.b64encode(buffered.getvalue()).decode('utf-8')
 
-# Check files
+# Ensure directories exist
 if not os.path.exists(SAMPLES_DIR):
     os.makedirs(SAMPLES_DIR)
 
-past_stories = []
+# Read current pipeline history memory
+past_episodes = []
 if os.path.exists(HISTORY_FILE):
     with open(HISTORY_FILE, "r") as f:
-        try: past_stories = json.load(f)
-        except json.JSONDecodeError: pass
+        try: 
+            past_episodes = json.load(f)
+        except json.JSONDecodeError: 
+            pass
 
-next_chapter_num = len(past_stories) + 1
+next_chapter_num = len(past_episodes) + 1
 
-# Grab the first available image file inside your lora_samples folder
+# Grab the first available image inside the folder
 image_paths = []
 for filename in os.listdir(SAMPLES_DIR):
     full_path = os.path.join(SAMPLES_DIR, filename)
@@ -164,38 +302,45 @@ for filename in os.listdir(SAMPLES_DIR):
         pass
 
 if not image_paths:
-    raise FileNotFoundError(f"Please place exactly one character image inside the '{SAMPLES_DIR}' folder.")
+    raise FileNotFoundError(f"Please place exactly one main character image inside the '{SAMPLES_DIR}' folder.")
 
-# Use only the absolute first image found for razor-sharp character analysis
 target_character_image = image_paths[0]
 encoded_image = convert_and_resize_image_to_base64(target_character_image)
 
-# High-fidelity directional storytelling prompt designed for Stable Diffusion generation
+# Extract titles and summaries from history to pass as constraints
+past_titles = [ep.get("title", "") for ep in past_episodes]
+past_summaries = [ep.get("summary", "") for ep in past_episodes]
+
+# Clear instructions telling the AI who the character is, what the trigger terms are, and how to structure memory
 prompt_text = f"""
-You are an expert anime director and storyboard artist. Analyze the attached reference image of our main character.
-Look at their gender, hair color, facial features, facial expression, and outfit style. They are ALWAYS the central figure.
+You are an expert anime director. Analyze the attached reference image of our main character. 
+The character is Yae Miko from Genshin Impact. She is the absolute main character of our story reel.
+When generating image prompts, always include her core descriptive trigger keywords: "yae_miko, 1girl, pink hair, fox ears, purple eyes, hair ornament, japanese clothes, shrine maiden outfit".
 
 Task:
-Write a meaningful, 10-second anime reel sequence split into 4 core sequential scenes.
-Because our pipeline renders at 8 frames per second (FPS), your job is to output exactly 80 prompts in total (20 continuous progressive sub-prompts for each of the 4 main scenes) so that the final video shows smooth, meaningful movement without sudden jumps.
+Write a meaningful, logical short anime reel storyboard for 'Episode {next_chapter_num}'.
+The video plays at 8 frames per second (FPS) and must run for exactly 10 seconds. You must output exactly 80 total progressive prompts (representing frame 1 to frame 80) mapping smooth micro-movements, scene progressions, and facial expressions so the story makes logical sense over 10 seconds.
 
-Ensure the theme avoids anything mentioned in our history log: {past_stories}.
+Ensure the story theme and events are completely different from past runs:
+Past Titles: {past_titles}
+Past Summaries: {past_summaries}
 
-You MUST output your final answer strictly as a clean, raw JSON object with NO markdown, NO triple backticks (```), and NO additional conversational text. 
+You MUST output your final answer strictly as a clean, raw JSON object with NO markdown codeblocks, NO triple backticks (```), and NO conversational text.
 
-Follow this exact structural template:
+Follow this structural format exactly:
 {{
   "title": "Anime Chronicles Episode {next_chapter_num}",
+  "summary": "Write a detailed single-paragraph summary of what happens in this 10-second story scene so a human can easily read the history.",
   "prompts": [
-    "Scene 1 Start (Frame 1): 1girl/1boy [describe character physical features from image], standing in an open meadow, wind blowing their hair, looking up at a cloudy sky, anime style, masterpiece",
-    "Scene 1 Progress (Frame 2): 1girl/1boy [describe features], in a meadow, slowly turning their head towards the camera, gentle wind, shifting background clouds, anime style",
-    "...(continue listing progressive movements frame-by-frame up to Frame 80)..."
+    "yae_miko, 1girl, pink hair, fox ears, purple eyes, hair ornament, japanese clothes, standing in a grand shrine courtyard, looking up thoughtfully at falling cherry blossom petals, wind blowing hair, masterpiece, anime style",
+    "yae_miko, 1girl, pink hair, fox ears, purple eyes, japanese clothes, in shrine courtyard, slowly turning head toward camera with an enigmatic smile, petals floating, masterpiece, anime style",
+    "...(continue mapping progressive frame adjustments up to frame 80)..."
   ]
 }}
 """
 
-print(f"🧠 Analyzing main character image: {os.path.basename(target_character_image)}")
-print(f"🎬 Composing an 80-frame (10 second at 8 FPS) progressive storyboard sequence via Qwen2.5-VL...")
+print(f"🧠 Analyzing main character image: {os.path.basename(target_character_image)} as Yae Miko...")
+print(f"🎬 Generating 80 progressive frames and story summary via Qwen2.5-VL...")
 
 response = generate(
     model='qwen2.5vl:3b',
@@ -209,7 +354,7 @@ response = generate(
 
 output_text = response['response'].strip()
 
-# Stripping common markdown wrappers just in case the model inserts them out of habit
+# Strip any unexpected markdown formatting
 if output_text.startswith("```"):
     output_text = output_text.split("\n", 1)[1]
 if output_text.endswith("```"):
@@ -218,24 +363,30 @@ output_text = output_text.strip("```json").strip("```").strip()
 
 try:
     story_payload = json.loads(output_text)
-    # Ensure it parsed clean and contains valid list formatting
     if not isinstance(story_payload.get("prompts"), list):
         raise ValueError("Prompts element must be a valid array list structure.")
 except Exception:
     print("⚠️ JSON layout formatting anomaly detected from AI. Triggering robust structural fallback extraction...")
-    # Clean fallback layout generation so your script NEVER crashes out on the GitHub Actions side
     lines = [line.strip().replace('"', '').strip(',') for line in output_text.split('\n') if len(line.strip()) > 15]
     story_payload = {
         "title": f"Anime Saga Chapter Vol {next_chapter_num}",
-        "prompts": lines[:80] if len(lines) >= 80 else lines + [f"Main character action continuation frame, anime style, masterpiece"] * (80 - len(lines))
+        "summary": "Yae Miko reflects deeply in a beautiful, changing environment as energy manifests around her.",
+        "prompts": lines[:80] if len(lines) >= 80 else lines + [f"yae_miko, 1girl, pink hair, fox ears, japanese clothes, continuing action frame, masterpiece, anime style"] * (80 - len(lines))
     }
 
-# Save memory history and the instruction blueprint file for Kaggle
-past_stories.append(story_payload["title"])
-with open(HISTORY_FILE, "w") as f:
-    json.dump(past_stories, f, indent=4)
+# Save human-readable structural metadata into the history tracking log
+history_entry = {
+    "episode": next_chapter_num,
+    "title": story_payload.get("title", f"Episode {next_chapter_num}"),
+    "summary": story_payload.get("summary", "A beautiful narrative sequence featuring Yae Miko.")
+}
+past_episodes.append(history_entry)
 
+with open(HISTORY_FILE, "w") as f:
+    json.dump(past_episodes, f, indent=4)
+
+# Save the raw prompt instructions separate for the Kaggle engine run step
 with open(INSTRUCTIONS_FILE, "w") as f:
     json.dump(story_payload, f, indent=4)
 
-print(f"🎉 Success! 'next_reel_instructions.json' successfully saved with {len(story_payload['prompts'])} structural image rendering prompts.")
+print(f"🎉 Success! Story details logged. 'next_reel_instructions.json' successfully saved with {len(story_payload['prompts'])} prompts.")
