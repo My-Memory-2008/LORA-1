@@ -6,6 +6,10 @@ on:
 jobs:
   generate_story:
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: write  # Allows the runner to commit and push files back to the repo
+      
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
