@@ -254,6 +254,7 @@
 
 
 
+
 import os
 import json
 import base64
@@ -307,9 +308,18 @@ if not image_paths:
 target_character_image = image_paths[0]
 encoded_image = convert_and_resize_image_to_base64(target_character_image)
 
-# Extract titles and summaries from history to pass as constraints
-past_titles = [ep.get("title", "") for ep in past_episodes]
-past_summaries = [ep.get("summary", "") for ep in past_episodes]
+# 🌟 FIXED: Safe list conversion logic handles both old raw strings and new objects 🌟
+past_titles = []
+past_summaries = []
+
+for ep in past_episodes:
+    if isinstance(ep, dict):
+        past_titles.append(ep.get("title", ""))
+        past_summaries.append(ep.get("summary", ""))
+    elif isinstance(ep, str):
+        # Gracefully handle residual legacy text items from the prior script versions
+        past_titles.append(ep)
+        past_summaries.append("Legacy recorded episode run.")
 
 # Clear instructions telling the AI who the character is, what the trigger terms are, and how to structure memory
 prompt_text = f"""
