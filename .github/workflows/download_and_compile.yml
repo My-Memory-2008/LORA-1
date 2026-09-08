@@ -1,0 +1,90 @@
+name: Step 2 - Download and Compile Reel
+
+on:
+  workflow_dispatch:    # Trigger manually from the Actions tab after Kaggle finishes
+
+jobs:
+  download_and_stitch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # Allows the bot to push changes back to the repo
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install Generation Tools
+        run: |
+          pip install kaggle opencv-python-headless
+
+      - name: Fetch Frames from Kaggle CLI
+        env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+        run: |
+          # 1. Clean workspace destinations to avoid duplicate artifacts
+          rm -rf kaggle_frames
+          mkdir -p kaggle_frames
+          
+          # 2. Download all files directly from your targeted notebook version
+          echo "📡 Pulling latest rendered assets from muhammadasjad2008/lora-1..."
+          kaggle kernels output muhammadasjad2008/lora-1 -p kaggle_frames
+
+      - name: Compile Video Reel (8 FPS)
+        run: |
+          python - << 'EOF'
+          import cv2
+          import glob
+          import os
+
+          # Read images explicitly from Kaggle output path structure
+          # Your notebook outputs them into a nested "outputs" directory
+          image_folder = "kaggle_frames/outputs"
+          images = sorted(glob.glob(f"{image_folder}/frame_*.png"))
+
+          print(f"📦 Found {len(images)} zero-padded frame assets for assembly.")
+          if not images:
+              print("❌ Error: No matching frame files found! Checking base fallback path...")
+              images = sorted(glob.glob("kaggle_frames/frame_*.png"))
+              
+          if not images:
+              print("❌ Critical Error: Could not locate rendered frames in output directories.")
+              exit(1)
+
+          # Open first asset to identify resolution dimensions
+          first_frame = cv2.imread(images[0])
+          height, width, layers = first_frame.shape
+
+          # Define output path configurations 
+          output_dir = "completed_reels"
+          os.makedirs(output_dir, exist_ok=True)
+          output_video = os.path.join(output_dir, "anime_reel_output.mp4")
+
+          # Initialize the encoding pipeline using standard MP4 codec profile
+          fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+          video = cv2.VideoWriter(output_video, fourcc, 8, (width, height)) # Programmed to run at your requested 8 FPS
+
+          # Stitch images sequentially frame-by-frame
+          for img_path in images:
+              video.write(cv2.imread(img_path))
+
+          video.release()
+          print(f"🎉 Success! Anime reel constructed and saved to: {output_video}")
+          EOF
+
+      - name: Commit and Push Video Reel to Repository
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Stage the final compiled video file path
+          git add completed_reels/anime_reel_output.mp4
+          
+          # Commit modifications securely back to your branch head tracking location
+          git commit -m "automation: appended latest compiled anime reel output" || echo "No asset shifts to commit"
+          git push origin HEAD:${{ github.ref }}
